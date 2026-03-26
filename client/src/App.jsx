@@ -192,6 +192,8 @@ const App = () => {
   const handleSurveyComplete = (answers) => {
     const scores = calculateScores(answers);
     const personalityType = getPersonalityType(scores);
+    const trimmedDisplayName = (answers.displayName || '').trim();
+    const resolvedDisplayName = trimmedDisplayName || `Student ${Math.floor(100 + Math.random() * 900)}`;
 
     const stressPercentile = clamp(((answers.stressLevel - 1) / 4) * 100);
     const topDisciplinedPercent = Math.max(1, 100 - scores.disciplineScore);
@@ -199,7 +201,7 @@ const App = () => {
     setReport({
       ...answers,
       ...scores,
-      displayName: `Student ${Math.floor(100 + Math.random() * 900)}`,
+      displayName: resolvedDisplayName,
       personalityType,
       roastLine: roastByType[personalityType],
       stressPercentile,
@@ -232,6 +234,8 @@ const App = () => {
       if (!postResponse.ok) {
         throw new Error('Submission failed. Please try again.');
       }
+
+      localStorage.setItem('student-dna-display-name', report.displayName);
 
       const analyticsResponse = await fetch(`${apiUrl}/api/dna/analytics`);
       if (!analyticsResponse.ok) {

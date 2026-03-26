@@ -177,6 +177,7 @@ const Results = ({
 
   const stressStat = `${report.stressPercentile}%`;
   const disciplineStat = `${report.topDisciplinedPercent}%`;
+  const normalizedCurrentDisplayName = (report.displayName || '').trim().toLowerCase();
 
   return (
     <motion.section className="results-wrap" variants={containerVariants} initial="hidden" animate="visible">
@@ -237,15 +238,6 @@ const Results = ({
         >
           DOWNLOAD IMAGE
         </motion.button>
-        <motion.button
-          type="button"
-          className="result-btn image-share-btn"
-          onClick={handleShareImage}
-          whileHover={{ y: -2 }}
-          whileTap={{ y: 0 }}
-        >
-          SHARE
-        </motion.button>
       </motion.div>
 
       <motion.div className="share-submit-row secondary-actions" variants={cardVariants}>
@@ -285,13 +277,19 @@ const Results = ({
           <p className="leaderboard-empty">Loading class stats...</p>
         ) : leaderboard?.length ? (
           <div className="leaderboard-list">
-            {leaderboard.map((item) => (
-              <div className="leaderboard-item" key={`${item.rank}-${item.name}`}>
-                <span className="leaderboard-rank">#{item.rank}</span>
-                <span className="leaderboard-name">{item.name}</span>
-                <span className="leaderboard-score">{item.chaosScore}</span>
-              </div>
-            ))}
+            {leaderboard.map((item) => {
+              const leaderboardDisplayName = item.name || item.displayName || '';
+              const isCurrentUser =
+                leaderboardDisplayName.trim().toLowerCase() === normalizedCurrentDisplayName;
+
+              return (
+                <div className={`leaderboard-item ${isCurrentUser ? 'highlight' : ''}`} key={`${item.rank}-${leaderboardDisplayName}`}>
+                  <span className="leaderboard-rank">#{item.rank}</span>
+                  <span className="leaderboard-name">{leaderboardDisplayName}</span>
+                  <span className="leaderboard-score">{item.chaosScore}</span>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <p className="leaderboard-empty">No leaderboard data yet.</p>

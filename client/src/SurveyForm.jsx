@@ -105,7 +105,15 @@ const allQuestions = sections.flatMap((section) =>
 
 const SurveyForm = ({ onComplete }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState({});
+  const [answers, setAnswers] = useState(() => {
+    if (typeof window === 'undefined') {
+      return { displayName: '' };
+    }
+
+    return {
+      displayName: localStorage.getItem('student-dna-display-name') || ''
+    };
+  });
   const [showValidationWarning, setShowValidationWarning] = useState(false);
 
   const currentQuestion = allQuestions[currentIndex];
@@ -124,6 +132,10 @@ const SurveyForm = ({ onComplete }) => {
   const handleSelect = (value) => {
     setAnswers((prev) => ({ ...prev, [currentQuestion.key]: value }));
     setShowValidationWarning(false);
+  };
+
+  const handleDisplayNameChange = (event) => {
+    setAnswers((prev) => ({ ...prev, displayName: event.target.value }));
   };
 
   const goNext = () => {
@@ -149,6 +161,21 @@ const SurveyForm = ({ onComplete }) => {
 
   return (
     <section className="survey-shell fade-up" key={currentQuestion.id}>
+      <div className="display-name-wrap">
+        <label className="display-name-label" htmlFor="displayName">
+          DISPLAY NAME (OPTIONAL)
+        </label>
+        <input
+          id="displayName"
+          type="text"
+          className="display-name-input"
+          value={answers.displayName || ''}
+          onChange={handleDisplayNameChange}
+          placeholder="Enter your name"
+          maxLength={40}
+        />
+      </div>
+
       <div className="progress-wrap">
         <div className="progress-meta-row">
           <span>
