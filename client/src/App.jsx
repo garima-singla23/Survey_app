@@ -150,9 +150,10 @@ const App = () => {
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
 
   const apiUrl = useMemo(() => {
-    const configuredUrl = import.meta.env.VITE_API_URL;
-    return configuredUrl ? configuredUrl.replace(/\/$/, '') : '';
-  }, []);
+  const configuredUrl = import.meta.env.VITE_API_URL;
+  console.log("API URL:", configuredUrl); // ✅ HERE
+  return configuredUrl ? configuredUrl.replace(/\/$/, '') : '';
+}, []);
 
   const fetchLeaderboard = async () => {
     if (!apiUrl) {
