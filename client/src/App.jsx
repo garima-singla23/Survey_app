@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import SurveyForm from './SurveyForm.jsx';
 import Results from './Results.jsx';
+import Admin from './Admin.jsx';
 
 const scoreMaps = {
   sleepTime: {
@@ -82,6 +83,13 @@ const clamp = (value) => Math.max(0, Math.min(100, Math.round(value)));
 
 const average = (arr) => arr.reduce((sum, val) => sum + val, 0) / arr.length;
 
+const generateStudentAlias = (personalityType) => {
+  const timestamp = Date.now().toString(16).slice(-4);
+  return `${personalityType} #${timestamp}`;
+};
+
+const normalizeName = (rawName) => (rawName || '').trim().slice(0, 20);
+
 const getPersonalityType = ({ disciplineScore, chaosScore, ambitionScore }) => {
   if (disciplineScore > 60 && chaosScore > 60 && ambitionScore > 60) {
     return 'Burnt-Out Overachiever';
@@ -142,36 +150,42 @@ const App = () => {
     const prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
     return prefersLight ? 'light' : 'dark';
   });
+  const [currentView, setCurrentView] = useState('survey'); // 'survey' or 'admin'
   const [report, setReport] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [analytics, setAnalytics] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
 
   const apiUrl = useMemo(() => {
-  const configuredUrl = import.meta.env.VITE_API_URL;
-  console.log("API URL:", configuredUrl); // ✅ HERE
-  return configuredUrl ? configuredUrl.replace(/\/$/, '') : '';
-}, []);
+    const configuredUrl = import.meta.env.VITE_API_URL;
+    return configuredUrl ? configuredUrl.replace(/\/$/, '') : '';
+  }, []);
 
   const fetchLeaderboard = async () => {
     if (!apiUrl) {
       setLeaderboard([]);
+      setCurrentUser(null);
       setLeaderboardLoading(false);
       return;
     }
 
     setLeaderboardLoading(true);
     try {
-      const response = await fetch(`${apiUrl}/api/dna`);
+      const savedDisplayName = normalizeName(localStorage.getItem('studentDisplayName'));
+      const queryParam = savedDisplayName ? `?displayName=${encodeURIComponent(savedDisplayName)}` : '';
+      const response = await fetch(`${apiUrl}/api/dna${queryParam}`);
       if (!response.ok) {
         throw new Error('Leaderboard unavailable');
       }
       const data = await response.json();
       setLeaderboard(data.leaderboard || []);
+      setCurrentUser(data.currentUser || null);
     } catch {
       setLeaderboard([]);
+      setCurrentUser(null);
     } finally {
       setLeaderboardLoading(false);
     }
@@ -192,8 +206,10 @@ const App = () => {
   const handleSurveyComplete = (answers) => {
     const scores = calculateScores(answers);
     const personalityType = getPersonalityType(scores);
-    const trimmedDisplayName = (answers.displayName || '').trim();
-    const resolvedDisplayName = trimmedDisplayName || `Student ${Math.floor(100 + Math.random() * 900)}`;
+
+    const savedDisplayName = normalizeName(localStorage.getItem('studentDisplayName'));
+    const finalDisplayName = savedDisplayName || generateStudentAlias(personalityType);
+    localStorage.setItem('studentDisplayName', finalDisplayName);
 
     const stressPercentile = clamp(((answers.stressLevel - 1) / 4) * 100);
     const topDisciplinedPercent = Math.max(1, 100 - scores.disciplineScore);
@@ -201,7 +217,7 @@ const App = () => {
     setReport({
       ...answers,
       ...scores,
-      displayName: resolvedDisplayName,
+      displayName: finalDisplayName,
       personalityType,
       roastLine: roastByType[personalityType],
       stressPercentile,
@@ -209,6 +225,7 @@ const App = () => {
     });
     setSubmitError('');
     setAnalytics(null);
+    setCurrentUser(null);
   };
 
   const handleSubmitToBackend = async () => {
@@ -228,14 +245,17 @@ const App = () => {
       const postResponse = await fetch(`${apiUrl}/api/dna`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(report)
+        body: JSON.stringify({
+          ...report,
+          displayName: normalizeName(localStorage.getItem('studentDisplayName')) || report.displayName
+        })
       });
 
       if (!postResponse.ok) {
         throw new Error('Submission failed. Please try again.');
       }
 
-      localStorage.setItem('student-dna-display-name', report.displayName);
+      localStorage.setItem('studentDisplayName', report.displayName);
 
       const analyticsResponse = await fetch(`${apiUrl}/api/dna/analytics`);
       if (!analyticsResponse.ok) {
@@ -254,65 +274,100 @@ const App = () => {
 
   return (
     <main className="app-root">
-      <div className="app-container">
-        <div className="theme-toggle-wrap">
+      {/* Navigation Bar */}
+      <nav className="sticky top-0 z-50 bg-gray-900 text-white shadow-lg">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+          <div className="flex gap-4">
+            <button
+              onClick={() => {
+                setCurrentView('survey');
+                setReport(null);
+              }}
+              className={`px-4 py-2 rounded transition ${
+                currentView === 'survey'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              📊 Survey
+            </button>
+            <button
+              onClick={() => setCurrentView('admin')}
+              className={`px-4 py-2 rounded transition ${
+                currentView === 'admin'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              📈 Analytics Dashboard
+            </button>
+          </div>
           <button
             type="button"
-            className="theme-toggle-btn"
+            className="theme-toggle-btn text-sm"
             onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
           >
-            {theme === 'dark' ? 'LIGHT MODE' : 'DARK MODE'}
+            {theme === 'dark' ? '☀️ LIGHT' : '🌙 DARK'}
           </button>
         </div>
+      </nav>
 
-        {!report && (
-          <header className="survey-header">
-            <div className="header-badge">
-              <span className="pulse-dot" />
-              <span>⚡ STUDENT DNA ANALYSIS v2.0</span>
-            </div>
+      {/* Admin View */}
+      {currentView === 'admin' && <Admin />}
 
-            <h1 className="survey-title">
-              <span>WHAT TYPE OF</span>
-              <span className="survey-title-gradient">STUDENT ARE YOU?</span>
-            </h1>
-
-            <p className="survey-subtitle">
-              13 brutally honest questions. 1 personality verdict. No sugarcoating.
-            </p>
-
-            <div className="hero-stats-row">
-              <div className="hero-stat-pill">
-                <span className="hero-stat-label">⏱</span>
-                <span className="hero-stat-value">3 MIN</span>
+      {/* Survey View */}
+      {currentView === 'survey' && (
+        <div className="app-container">
+          {!report && (
+            <header className="survey-header">
+              <div className="header-badge">
+                <span className="pulse-dot" />
+                <span>⚡ STUDENT DNA ANALYSIS v2.0</span>
               </div>
-              <div className="hero-stat-pill">
-                <span className="hero-stat-label">🔒</span>
-                <span className="hero-stat-value">ANONYMOUS</span>
-              </div>
-              <div className="hero-stat-pill">
-                <span className="hero-stat-label">📊</span>
-                <span className="hero-stat-value">13 QUESTIONS</span>
-              </div>
-            </div>
-          </header>
-        )}
 
-        {!report ? (
-          <SurveyForm onComplete={handleSurveyComplete} />
-        ) : (
-          <Results
-            report={report}
-            analytics={analytics}
-            leaderboard={leaderboard}
-            leaderboardLoading={leaderboardLoading}
-            onSubmit={handleSubmitToBackend}
-            onRetake={() => setReport(null)}
-            isSubmitting={submitting}
-            error={submitError}
-          />
-        )}
-      </div>
+              <h1 className="survey-title">
+                <span>WHAT TYPE OF</span>
+                <span className="survey-title-gradient">STUDENT ARE YOU?</span>
+              </h1>
+
+              <p className="survey-subtitle">
+                13 brutally honest questions. 1 personality verdict. No sugarcoating.
+              </p>
+
+              <div className="hero-stats-row">
+                <div className="hero-stat-pill">
+                  <span className="hero-stat-label">⏱</span>
+                  <span className="hero-stat-value">3 MIN</span>
+                </div>
+                <div className="hero-stat-pill">
+                  <span className="hero-stat-label">🔒</span>
+                  <span className="hero-stat-value">ANONYMOUS</span>
+                </div>
+                <div className="hero-stat-pill">
+                  <span className="hero-stat-label">📊</span>
+                  <span className="hero-stat-value">13 QUESTIONS</span>
+                </div>
+              </div>
+            </header>
+          )}
+
+          {!report ? (
+            <SurveyForm onComplete={handleSurveyComplete} />
+          ) : (
+            <Results
+              report={report}
+              analytics={analytics}
+              leaderboard={leaderboard}
+              currentUser={currentUser}
+              leaderboardLoading={leaderboardLoading}
+              onSubmit={handleSubmitToBackend}
+              onRetake={() => setReport(null)}
+              isSubmitting={submitting}
+              error={submitError}
+            />
+          )}
+        </div>
+      )}
     </main>
   );
 };

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 const sections = [
   {
@@ -103,18 +103,28 @@ const allQuestions = sections.flatMap((section) =>
   section.questions.map((question) => ({ ...question, sectionId: section.id, sectionTitle: section.title }))
 );
 
+const MAX_NAME_LENGTH = 20;
+
 const SurveyForm = ({ onComplete }) => {
+  const [hasStarted, setHasStarted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState(() => {
     if (typeof window === 'undefined') {
       return { displayName: '' };
     }
-
     return {
-      displayName: localStorage.getItem('student-dna-display-name') || ''
+      displayName: localStorage.getItem('studentDisplayName') || ''
     };
   });
+  const [nameDraft, setNameDraft] = useState(() => {
+    if (typeof window === 'undefined') {
+      return '';
+    }
+    return localStorage.getItem('studentDisplayName') || '';
+  });
   const [showValidationWarning, setShowValidationWarning] = useState(false);
+  const [showNameRecovery, setShowNameRecovery] = useState(false);
+  const [nameRecoveryDraft, setNameRecoveryDraft] = useState('');
 
   const currentQuestion = allQuestions[currentIndex];
   const selectedValue = answers[currentQuestion.key];
@@ -134,8 +144,43 @@ const SurveyForm = ({ onComplete }) => {
     setShowValidationWarning(false);
   };
 
-  const handleDisplayNameChange = (event) => {
-    setAnswers((prev) => ({ ...prev, displayName: event.target.value }));
+  useEffect(() => {
+    if (!hasStarted || typeof window === 'undefined') {
+      return;
+    }
+
+    const storedName = localStorage.getItem('studentDisplayName');
+    if (!storedName || !storedName.trim()) {
+      setShowNameRecovery(true);
+      return;
+    }
+
+    setShowNameRecovery(false);
+    setAnswers((prev) => ({ ...prev, displayName: storedName.trim() }));
+  }, [currentIndex, hasStarted]);
+
+  const handleNameDraftChange = (event) => {
+    setNameDraft(event.target.value.slice(0, MAX_NAME_LENGTH));
+  };
+
+  const handleStartQuiz = () => {
+    const trimmedName = nameDraft.trim().slice(0, MAX_NAME_LENGTH);
+    localStorage.setItem('studentDisplayName', trimmedName);
+    setAnswers((prev) => ({ ...prev, displayName: trimmedName }));
+    setHasStarted(true);
+    setShowNameRecovery(false);
+  };
+
+  const handleNameRecoverySave = () => {
+    const recoveredName = nameRecoveryDraft.trim().slice(0, MAX_NAME_LENGTH);
+    if (!recoveredName) {
+      return;
+    }
+    localStorage.setItem('studentDisplayName', recoveredName);
+    setAnswers((prev) => ({ ...prev, displayName: recoveredName }));
+    setNameDraft(recoveredName);
+    setShowNameRecovery(false);
+    setNameRecoveryDraft('');
   };
 
   const goNext = () => {
@@ -159,22 +204,53 @@ const SurveyForm = ({ onComplete }) => {
     }
   };
 
+  if (!hasStarted) {
+    return (
+      <section className="survey-shell fade-up">
+        <article className="start-name-card">
+          <label className="start-name-label" htmlFor="startDisplayName">
+            WHAT SHOULD WE CALL YOU?
+          </label>
+          <div className="start-name-input-wrap">
+            <input
+              id="startDisplayName"
+              type="text"
+              className="start-name-input"
+              value={nameDraft}
+              onChange={handleNameDraftChange}
+              placeholder="Enter your name or nickname..."
+              maxLength={MAX_NAME_LENGTH}
+            />
+            <span className="start-name-counter">{nameDraft.length}/{MAX_NAME_LENGTH}</span>
+          </div>
+          <button type="button" className="nav-btn next-btn start-quiz-btn" onClick={handleStartQuiz}>
+            START QUIZ
+          </button>
+        </article>
+      </section>
+    );
+  }
+
   return (
     <section className="survey-shell fade-up" key={currentQuestion.id}>
-      <div className="display-name-wrap">
-        <label className="display-name-label" htmlFor="displayName">
-          DISPLAY NAME (OPTIONAL)
-        </label>
-        <input
-          id="displayName"
-          type="text"
-          className="display-name-input"
-          value={answers.displayName || ''}
-          onChange={handleDisplayNameChange}
-          placeholder="Enter your name"
-          maxLength={40}
-        />
-      </div>
+      {showNameRecovery && (
+        <div className="name-recovery-wrap">
+          <p className="name-recovery-text">We lost your name! What should we call you?</p>
+          <div className="name-recovery-row">
+            <input
+              type="text"
+              className="name-recovery-input"
+              value={nameRecoveryDraft}
+              onChange={(event) => setNameRecoveryDraft(event.target.value.slice(0, MAX_NAME_LENGTH))}
+              placeholder="Enter name"
+              maxLength={MAX_NAME_LENGTH}
+            />
+            <button type="button" className="nav-btn next-btn name-recovery-btn" onClick={handleNameRecoverySave}>
+              SAVE
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="progress-wrap">
         <div className="progress-meta-row">

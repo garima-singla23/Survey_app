@@ -23,10 +23,28 @@ const breakdownRows = [
   }
 ];
 
+const personalityEmojis = {
+  'Philosopher': '🧠',
+  'Last-Minute Legend': '⚡',
+  'Burnt-Out Overachiever': '🏆',
+  'Silent Disciplined Machine': '🔥',
+  'High-Ambition Chaotic Performer': '🌪️',
+  'Peaceful Coaster': '⚖️'
+};
+
+const formatDisplayName = (rawName) =>
+  (rawName || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+
 const Results = ({
   report,
   analytics,
   leaderboard,
+  currentUser,
   leaderboardLoading,
   onSubmit,
   onRetake,
@@ -177,13 +195,23 @@ const Results = ({
 
   const stressStat = `${report.stressPercentile}%`;
   const disciplineStat = `${report.topDisciplinedPercent}%`;
-  const normalizedCurrentDisplayName = (report.displayName || '').trim().toLowerCase();
+  const studentDisplayName = typeof window !== 'undefined' ? localStorage.getItem('studentDisplayName') : '';
+  const normalizedDisplayName = (studentDisplayName || report.displayName || '').trim();
+  const formattedDisplayName = formatDisplayName(normalizedDisplayName);
+  const isUserInLeaderboard = leaderboard?.some(
+    (item) => ((item.displayName || item.name || '').trim() === normalizedDisplayName)
+  );
+  const personalityEmoji = personalityEmojis[report.personalityType] || '✨';
 
   return (
     <motion.section className="results-wrap" variants={containerVariants} initial="hidden" animate="visible">
       <div className="result-share-capture" ref={captureRef}>
         <p className="share-image-title">STUDENT DNA REPORT</p>
+        <p className="share-image-subtitle">Results for {formattedDisplayName}</p>
         <motion.div className="personality-reveal-card" variants={cardVariants}>
+          <div className="personality-shimmer"></div>
+          <p className="personality-emoji">{personalityEmoji}</p>
+          <p className="personality-greeting">HERE ARE YOUR RESULTS, {formattedDisplayName} 👋</p>
           <p className="personality-label">YOUR STUDENT DNA TYPE</p>
           <motion.h2 className="personality-title" variants={titleVariants}>
             {report.personalityType}
@@ -193,6 +221,7 @@ const Results = ({
 
         <motion.div className="scores-card" variants={cardVariants}>
           <h3 className="scores-title">YOUR SCORES</h3>
+          <p className="scores-subtitle">{formattedDisplayName}&apos;s Academic DNA Breakdown</p>
           {scoreBars.map((item) => (
             <div className="score-row" key={item.key}>
               <div className="score-row-label">
@@ -201,6 +230,10 @@ const Results = ({
               </div>
               <div className="score-track">
                 <div className={`score-fill ${item.colorClass}`} style={{ width: `${animatedScores[item.key]}%` }} />
+                <div className="score-you-marker" style={{ left: `${animatedScores[item.key]}%` }}>
+                  <div className={`score-you-dot ${item.key}`}></div>
+                  <span className="score-you-label">YOU</span>
+                </div>
               </div>
             </div>
           ))}
@@ -220,12 +253,20 @@ const Results = ({
 
       <motion.div className="meaning-card" variants={cardVariants}>
         <h3 className="meaning-title">WHAT THIS MEANS</h3>
-        {breakdownRows.map((row) => (
-          <div className="meaning-row" key={row.trait}>
-            <p className="meaning-trait">{row.trait}</p>
-            <p className="meaning-text">{row.description}</p>
-          </div>
-        ))}
+        <p className="meaning-intro">Based on your answers, {formattedDisplayName}, here&apos;s what your DNA reveals:</p>
+        {breakdownRows.map((row, idx) => {
+          const borderClasses = [
+            'trait-discipline',
+            'trait-chaos',
+            'trait-ambition'
+          ];
+          return (
+            <div className={`meaning-row ${borderClasses[idx]}`} key={row.trait}>
+              <p className="meaning-trait">{row.trait}</p>
+              <p className="meaning-text">{row.description}</p>
+            </div>
+          );
+        })}
       </motion.div>
 
       <motion.div className="share-submit-row" variants={cardVariants}>
@@ -276,21 +317,34 @@ const Results = ({
         {leaderboardLoading ? (
           <p className="leaderboard-empty">Loading class stats...</p>
         ) : leaderboard?.length ? (
-          <div className="leaderboard-list">
-            {leaderboard.map((item) => {
-              const leaderboardDisplayName = item.name || item.displayName || '';
-              const isCurrentUser =
-                leaderboardDisplayName.trim().toLowerCase() === normalizedCurrentDisplayName;
+          <>
+            <div className="leaderboard-list">
+              {leaderboard.map((item) => {
+                const itemName = (item.displayName || item.name || '').trim();
+                const isCurrentUser = itemName === normalizedDisplayName;
 
-              return (
-                <div className={`leaderboard-item ${isCurrentUser ? 'highlight' : ''}`} key={`${item.rank}-${leaderboardDisplayName}`}>
-                  <span className="leaderboard-rank">#{item.rank}</span>
-                  <span className="leaderboard-name">{leaderboardDisplayName}</span>
-                  <span className="leaderboard-score">{item.chaosScore}</span>
+                return (
+                  <div className={`leaderboard-item ${isCurrentUser ? 'highlight' : ''}`} key={`${item.rank}-${item.displayName || item.name}`}>
+                    <span className="leaderboard-rank">#{item.rank}</span>
+                    <span className="leaderboard-name">{formatDisplayName(itemName)}</span>
+                    <div className="leaderboard-score-wrap">
+                      {isCurrentUser && <span className="leaderboard-you-badge">← YOU</span>}
+                      <span className="leaderboard-score">{item.chaosScore}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {!isUserInLeaderboard && currentUser?.rank && (
+              <div className="user-rank-card">
+                <div className="user-rank-content">
+                  <span className="user-rank-line">
+                    YOUR RANK: #{currentUser.rank} — {formattedDisplayName} — Score: {currentUser.chaosScore}
+                  </span>
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            )}
+          </>
         ) : (
           <p className="leaderboard-empty">No leaderboard data yet.</p>
         )}
