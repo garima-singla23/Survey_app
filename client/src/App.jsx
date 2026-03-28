@@ -203,7 +203,38 @@ const App = () => {
     localStorage.setItem('student-dna-theme', theme);
   }, [theme]);
 
-  const handleSurveyComplete = (answers) => {
+  const submitEntryImmediately = async ({ answers, scores, personalityType, displayName }) => {
+    if (!apiUrl) {
+      return false;
+    }
+
+    const totalScore = Number(scores.disciplineScore) + Number(scores.chaosScore) + Number(scores.ambitionScore);
+    const timestamp = new Date().toISOString();
+
+    const payload = {
+      name: displayName,
+      displayName,
+      studentType: personalityType,
+      personalityType,
+      disciplineScore: Number(scores.disciplineScore),
+      chaosScore: Number(scores.chaosScore),
+      ambitionScore: Number(scores.ambitionScore),
+      totalScore,
+      timestamp,
+      submittedAt: timestamp,
+      ...answers
+    };
+
+    const response = await fetch(`${apiUrl}/api/dna`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    return response.ok;
+  };
+
+  const handleSurveyComplete = async (answers) => {
     const scores = calculateScores(answers);
     const personalityType = getPersonalityType(scores);
 
@@ -214,11 +245,25 @@ const App = () => {
     const stressPercentile = clamp(((answers.stressLevel - 1) / 4) * 100);
     const topDisciplinedPercent = Math.max(1, 100 - scores.disciplineScore);
 
+    let persistedToLeaderboard = false;
+    try {
+      persistedToLeaderboard = await submitEntryImmediately({
+        answers,
+        scores,
+        personalityType,
+        displayName: finalDisplayName
+      });
+    } catch {
+      persistedToLeaderboard = false;
+    }
+
     setReport({
       ...answers,
       ...scores,
       displayName: finalDisplayName,
       personalityType,
+      totalScore: Number(scores.disciplineScore) + Number(scores.chaosScore) + Number(scores.ambitionScore),
+      isPersisted: persistedToLeaderboard,
       roastLine: roastByType[personalityType],
       stressPercentile,
       topDisciplinedPercent
@@ -242,17 +287,22 @@ const App = () => {
     setSubmitError('');
 
     try {
-      const postResponse = await fetch(`${apiUrl}/api/dna`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...report,
-          displayName: normalizeName(localStorage.getItem('studentDisplayName')) || report.displayName
-        })
-      });
+      if (!report.isPersisted) {
+        const postResponse = await fetch(`${apiUrl}/api/dna`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...report,
+            displayName: normalizeName(localStorage.getItem('studentDisplayName')) || report.displayName,
+            submittedAt: new Date().toISOString()
+          })
+        });
 
-      if (!postResponse.ok) {
-        throw new Error('Submission failed. Please try again.');
+        if (!postResponse.ok) {
+          throw new Error('Submission failed. Please try again.');
+        }
+
+        setReport((prev) => ({ ...prev, isPersisted: true }));
       }
 
       localStorage.setItem('studentDisplayName', report.displayName);
@@ -275,36 +325,30 @@ const App = () => {
   return (
     <main className="app-root">
       {/* Navigation Bar */}
-      <nav className="sticky top-0 z-50 bg-gray-900 text-white shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
-          <div className="flex gap-4">
+      <nav className="top-tabs-shell">
+        <div className="top-tabs-inner">
+          <div className="top-tabs-row">
             <button
               onClick={() => {
                 setCurrentView('survey');
                 setReport(null);
               }}
-              className={`px-4 py-2 rounded transition ${
-                currentView === 'survey'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-300 hover:bg-gray-700'
-              }`}
+              className={`top-tab-btn ${currentView === 'survey' ? 'active' : ''}`}
             >
-              📊 Survey
+              <span className="top-tab-icon" aria-hidden="true">📊</span>
+              <span className="top-tab-label">SURVEY</span>
             </button>
             <button
               onClick={() => setCurrentView('admin')}
-              className={`px-4 py-2 rounded transition ${
-                currentView === 'admin'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-300 hover:bg-gray-700'
-              }`}
+              className={`top-tab-btn ${currentView === 'admin' ? 'active' : ''}`}
             >
-              📈 Analytics Dashboard
+              <span className="top-tab-icon" aria-hidden="true">📈</span>
+              <span className="top-tab-label">ADMIN ANALYTICS</span>
             </button>
           </div>
           <button
             type="button"
-            className="theme-toggle-btn text-sm"
+            className="theme-toggle-btn top-theme-toggle"
             onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
           >
             {theme === 'dark' ? '☀️ LIGHT' : '🌙 DARK'}

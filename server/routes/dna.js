@@ -5,42 +5,48 @@ const router = express.Router();
 
 router.get('/', async (req, res) => {
   try {
-    const topByChaos = await StudentDNA.find({}, 'displayName personalityType chaosScore submittedAt')
-      .sort({ chaosScore: -1, submittedAt: -1 })
-      .limit(5)
+    // Fetch ALL entries sorted by totalScore descending
+    const allEntries = await StudentDNA.find(
+      {},
+      'displayName personalityType chaosScore totalScore submittedAt'
+    )
+      .sort({ totalScore: -1, submittedAt: -1 })
       .lean();
+
+    // Get top 5 for display
+    const top5 = allEntries.slice(0, 5);
 
     const requestedDisplayName = (req.query.displayName || '').trim();
     let currentUser = null;
+    let userRank = null;
 
     if (requestedDisplayName) {
-      const allEntries = await StudentDNA.find({}, 'displayName personalityType chaosScore submittedAt')
-        .sort({ chaosScore: -1, submittedAt: -1 })
-        .lean();
-
       const currentUserIndex = allEntries.findIndex(
         (entry) => (entry.displayName || '').trim() === requestedDisplayName
       );
 
       if (currentUserIndex !== -1) {
         const entry = allEntries[currentUserIndex];
+        userRank = currentUserIndex + 1;
         currentUser = {
-          rank: currentUserIndex + 1,
+          rank: userRank,
           name: entry.displayName || requestedDisplayName,
           chaosScore: entry.chaosScore || 0,
+          totalScore: entry.totalScore || 0,
           personalityType: entry.personalityType || 'Unknown'
         };
       }
     }
 
-    const leaderboard = topByChaos.map((entry, index) => ({
+    const leaderboard = top5.map((entry, index) => ({
       rank: index + 1,
       name: entry.displayName || `${entry.personalityType || 'Student'} #${String(entry._id).slice(-4)}`,
       chaosScore: entry.chaosScore || 0,
+      totalScore: entry.totalScore || 0,
       personalityType: entry.personalityType || 'Unknown'
     }));
 
-    return res.json({ leaderboard, currentUser });
+    return res.json({ leaderboard, currentUser, userRank });
   } catch (error) {
     return res.status(500).json({ message: 'Failed to fetch leaderboard', error: error.message });
   }

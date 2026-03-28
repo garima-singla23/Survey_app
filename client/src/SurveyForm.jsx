@@ -165,8 +165,9 @@ const SurveyForm = ({ onComplete }) => {
 
   const handleStartQuiz = () => {
     const trimmedName = nameDraft.trim().slice(0, MAX_NAME_LENGTH);
-    localStorage.setItem('studentDisplayName', trimmedName);
-    setAnswers((prev) => ({ ...prev, displayName: trimmedName }));
+    const initialDisplayName = trimmedName || `Student #${Date.now().toString().slice(-4)}`;
+    localStorage.setItem('studentDisplayName', initialDisplayName);
+    setAnswers((prev) => ({ ...prev, displayName: initialDisplayName }));
     setHasStarted(true);
     setShowNameRecovery(false);
   };

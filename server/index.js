@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import dnaRoutes from './routes/dna.js';
+import adminRoutes from './routes/admin.js';
 
 dotenv.config();
 
@@ -33,6 +34,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.use('/api/dna', dnaRoutes);
+app.use('/api/admin', adminRoutes);
 
 const startServer = async () => {
   try {
