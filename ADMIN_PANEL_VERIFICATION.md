@@ -194,7 +194,7 @@ survey_app/
 
 ### Server (.env)
 ```
-MONGO_URI=mongodb+srv://user:password@cluster.mongodb.net/database
+MONGO_URI=your_mongo_uri_here
 PORT=5000
 FRONTEND_URL=http://localhost:5173
 ```
