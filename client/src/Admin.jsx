@@ -18,9 +18,8 @@ import {
 } from 'recharts';
 
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
-const ADMIN_PASSWORD = 'admin2024';
 const SESSION_UNLOCK_KEY = 'adminUnlocked';
-const SESSION_MODE_KEY = 'adminMode';
+const SESSION_TOKEN_KEY = 'adminToken';
 
 const PIE_COLORS = ['#00c8ff', '#ff5d5d', '#7c3aed', '#0ea5e9', '#14b8a6', '#f59e0b', '#22c55e', '#ec4899'];
 
@@ -75,22 +74,13 @@ const SkeletonChartCard = () => (
   </article>
 );
 
-const ThemeToggleButton = ({ mode, onToggle }) => (
-  <button
-    type="button"
-    className="theme-toggle-btn"
-    onClick={onToggle}
-    title={`Switch to ${mode === 'dark' ? 'light' : 'dark'} mode`}
-  >
-    {mode === 'dark' ? '☀️' : '🌙'}
-  </button>
-);
-
-export default function Admin() {
+export default function Admin({ onLogoutSuccess, theme = 'dark' }) {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [passwordDraft, setPasswordDraft] = useState('');
   const [unlockError, setUnlockError] = useState('');
-  const [mode, setMode] = useState('dark');
+  const [attemptsLeft, setAttemptsLeft] = useState(5);
+  const [rateLimitSeconds, setRateLimitSeconds] = useState(0);
+  const [isVerifying, setIsVerifying] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -100,19 +90,83 @@ export default function Admin() {
     checked: false,
     message: 'Not checked'
   });
+  const mode = theme === 'light' ? 'light' : 'dark';
 
-  useEffect(() => {
-    const unlocked = sessionStorage.getItem(SESSION_UNLOCK_KEY) === 'true';
-    const savedMode = sessionStorage.getItem(SESSION_MODE_KEY);
-    setIsUnlocked(unlocked);
-    if (savedMode === 'light' || savedMode === 'dark') {
-      setMode(savedMode);
-    }
+  const clearSession = useCallback(() => {
+    sessionStorage.removeItem(SESSION_TOKEN_KEY);
+    sessionStorage.removeItem(SESSION_UNLOCK_KEY);
+    setIsUnlocked(false);
+    setPasswordDraft('');
+    setData(null);
   }, []);
 
+  const handleLogout = useCallback(async () => {
+    const token = sessionStorage.getItem(SESSION_TOKEN_KEY);
+
+    try {
+      if (token) {
+        await fetch(`${API_BASE}/api/admin/logout`, {
+          method: 'POST',
+          headers: {
+            'x-admin-token': token
+          }
+        });
+      }
+    } catch {
+      // Best-effort logout; still clear local session.
+    } finally {
+      clearSession();
+      setUnlockError('');
+      if (typeof onLogoutSuccess === 'function') {
+        onLogoutSuccess();
+      }
+    }
+  }, [clearSession, onLogoutSuccess]);
+
   useEffect(() => {
-    sessionStorage.setItem(SESSION_MODE_KEY, mode);
-  }, [mode]);
+    const token = sessionStorage.getItem(SESSION_TOKEN_KEY);
+    if (!token) {
+      setIsUnlocked(false);
+      return;
+    }
+
+    const validateToken = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/admin/analytics`, {
+          headers: {
+            'x-admin-token': token
+          }
+        });
+
+        if (res.status === 401) {
+          clearSession();
+          setUnlockError('Session expired. Please login again.');
+          return;
+        }
+
+        if (res.ok) {
+          sessionStorage.setItem(SESSION_UNLOCK_KEY, 'true');
+          setIsUnlocked(true);
+        }
+      } catch {
+        setIsUnlocked(false);
+      }
+    };
+
+    validateToken();
+  }, [clearSession]);
+
+  useEffect(() => {
+    if (rateLimitSeconds <= 0) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setRateLimitSeconds((prev) => Math.max(0, prev - 1));
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [rateLimitSeconds]);
 
   useEffect(() => {
     if (isUnlocked) {
@@ -149,9 +203,15 @@ export default function Admin() {
 
       const response = await fetch(`${API_BASE}/api/admin/analytics`, {
         headers: {
-          'x-admin-key': ADMIN_PASSWORD
+          'x-admin-token': sessionStorage.getItem(SESSION_TOKEN_KEY) || ''
         }
       });
+
+      if (response.status === 401) {
+        clearSession();
+        setUnlockError('Session expired. Please login again.');
+        return;
+      }
 
       if (!response.ok) {
         const text = await response.text();
@@ -181,7 +241,7 @@ export default function Admin() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [clearSession]);
 
   useEffect(() => {
     if (!isUnlocked) {
@@ -208,16 +268,50 @@ export default function Admin() {
     };
   }, [isUnlocked, fetchAnalytics]);
 
-  const handleUnlock = (event) => {
+  const handleUnlock = async (event) => {
     event.preventDefault();
-    if (passwordDraft !== ADMIN_PASSWORD) {
-      setUnlockError('Invalid password.');
+    if (!passwordDraft.trim() || rateLimitSeconds > 0 || isVerifying) {
       return;
     }
-    sessionStorage.setItem(SESSION_UNLOCK_KEY, 'true');
+
+    setIsVerifying(true);
     setUnlockError('');
-    setPasswordDraft('');
-    setIsUnlocked(true);
+
+    try {
+      const response = await fetch(`${API_BASE}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: passwordDraft })
+      });
+
+      const payload = await response.json();
+
+      if (response.status === 429) {
+        setUnlockError(payload.error || 'Too many attempts. Please try again later.');
+        setRateLimitSeconds(Number(payload.retryAfterSeconds || 0));
+        return;
+      }
+
+      if (!response.ok) {
+        setUnlockError(payload.error || 'Incorrect password.');
+        if (typeof payload.remainingAttempts === 'number') {
+          setAttemptsLeft(payload.remainingAttempts);
+        }
+        return;
+      }
+
+      sessionStorage.setItem(SESSION_TOKEN_KEY, payload.token);
+      sessionStorage.setItem(SESSION_UNLOCK_KEY, 'true');
+      setAttemptsLeft(5);
+      setRateLimitSeconds(0);
+      setUnlockError('');
+      setIsUnlocked(true);
+    } catch {
+      setUnlockError('Network error. Please try again.');
+    } finally {
+      setIsVerifying(false);
+      setPasswordDraft('');
+    }
   };
 
   const handleExportCsv = () => {
@@ -323,15 +417,33 @@ export default function Admin() {
               type="password"
               value={passwordDraft}
               onChange={(event) => setPasswordDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  handleUnlock(event);
+                }
+              }}
               placeholder="Password"
               autoComplete="current-password"
             />
             {unlockError && <p className="admin-inline-error">{unlockError}</p>}
-            <button type="submit">UNLOCK</button>
-            <ThemeToggleButton 
-              mode={mode} 
-              onToggle={() => setMode((prev) => (prev === 'dark' ? 'light' : 'dark'))}
-            />
+            {attemptsLeft < 3 && rateLimitSeconds === 0 && (
+              <p className="admin-inline-warning">⚠️ {attemptsLeft} attempts remaining before lockout</p>
+            )}
+            {rateLimitSeconds > 0 && (
+              <p className="admin-inline-warning">
+                Too many attempts. Try again in {rateLimitSeconds}s
+              </p>
+            )}
+            <button type="submit" disabled={isVerifying || rateLimitSeconds > 0 || !passwordDraft.trim()}>
+              {isVerifying ? (
+                <>
+                  <span className="login-spinner" aria-hidden="true" /> VERIFYING...
+                </>
+              ) : (
+                'UNLOCK'
+              )}
+            </button>
           </form>
         </div>
       </section>
@@ -354,10 +466,9 @@ export default function Admin() {
             <button type="button" className="refresh-btn" onClick={fetchAnalytics} disabled={loading}>
               ↻ REFRESH
             </button>
-            <ThemeToggleButton 
-              mode={mode} 
-              onToggle={() => setMode((prev) => (prev === 'dark' ? 'light' : 'dark'))}
-            />
+            <button type="button" className="logout-btn" onClick={handleLogout}>
+              LOGOUT
+            </button>
           </div>
         </header>
 

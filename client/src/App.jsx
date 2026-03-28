@@ -158,6 +158,7 @@ const App = () => {
   const [leaderboard, setLeaderboard] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [adminToast, setAdminToast] = useState('');
 
   const apiUrl = useMemo(() => {
     const configuredUrl = import.meta.env.VITE_API_URL;
@@ -202,6 +203,24 @@ const App = () => {
     document.body.classList.toggle('light-theme', isLight);
     localStorage.setItem('student-dna-theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (!adminToast) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setAdminToast('');
+    }, 3000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [adminToast]);
+
+  const handleAdminLogoutSuccess = () => {
+    setCurrentView('survey');
+    setReport(null);
+    setAdminToast('Logged out successfully.');
+  };
 
   const submitEntryImmediately = async ({ answers, scores, personalityType, displayName }) => {
     if (!apiUrl) {
@@ -356,8 +375,10 @@ const App = () => {
         </div>
       </nav>
 
+      {adminToast && <div className="app-toast">{adminToast}</div>}
+
       {/* Admin View */}
-      {currentView === 'admin' && <Admin />}
+      {currentView === 'admin' && <Admin onLogoutSuccess={handleAdminLogoutSuccess} theme={theme} />}
 
       {/* Survey View */}
       {currentView === 'survey' && (

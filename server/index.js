@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import dnaRoutes from './routes/dna.js';
 import adminRoutes from './routes/admin.js';
 
+dotenv.config({ path: '.env.local' });
 dotenv.config();
 
 const app = express();

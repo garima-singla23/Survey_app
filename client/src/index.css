@@ -251,6 +251,29 @@ body::after {
 
 .top-tab-label {
   vertical-align: middle;
+
+.app-toast {
+  position: sticky;
+  top: 62px;
+  z-index: 45;
+  max-width: 1200px;
+  margin: 10px auto 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  background: rgba(34, 197, 94, 0.12);
+  color: #3fb950;
+  font-family: 'Space Mono', monospace;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  transition: all 0.3s ease;
+}
+
+body.light-theme .app-toast {
+  border-color: rgba(26, 127, 55, 0.35);
+  background: rgba(26, 127, 55, 0.1);
+  color: #1a7f37;
+}
 }
 
 .top-theme-toggle {
@@ -1031,12 +1054,13 @@ body.light-theme .results-error {
 
 .refresh-btn,
 .theme-toggle-btn,
+.logout-btn,
 .export-btn,
 .admin-login-card button {
   border-radius: 8px;
   padding: 10px 20px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.3s ease;
   font-weight: 700;
   font-family: inherit;
 }
@@ -1071,6 +1095,18 @@ body.light-theme .results-error {
 .theme-toggle-btn:hover {
   border-color: var(--admin-accent);
   background: rgba(0, 200, 255, 0.05);
+}
+
+.logout-btn {
+  border: 1px solid var(--admin-border);
+  color: var(--admin-text);
+  background: transparent;
+}
+
+.logout-btn:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+  background: color-mix(in srgb, #ef4444 12%, transparent);
 }
 
 .export-btn {
@@ -1134,7 +1170,7 @@ body.light-theme .results-error {
   padding: 11px 12px;
   margin-bottom: 10px;
   outline: none;
-  transition: all 0.2s ease;
+  transition: all 0.3s ease;
 }
 
 .admin-login-card input:focus {
@@ -1156,8 +1192,49 @@ body.light-theme .results-error {
 
 .admin-inline-error {
   margin: 2px 0 10px;
-  color: #ef4444;
+  color: #f85149;
   font-size: 13px;
+}
+
+.admin-inline-warning {
+  margin: 2px 0 10px;
+  color: #f59e0b;
+  font-size: 13px;
+}
+
+.admin-inline-success {
+  margin: 2px 0 10px;
+  color: #3fb950;
+  font-size: 13px;
+}
+
+.admin-login-card button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.login-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 8px;
+  animation: adminSpin 0.8s linear infinite;
+  vertical-align: -2px;
+}
+
+.admin-panel.light .admin-inline-error {
+  color: #cf222e;
+}
+
+.admin-panel.light .admin-inline-warning {
+  color: #9a6700;
+}
+
+.admin-panel.light .admin-inline-success {
+  color: #1a7f37;
 }
 
 .top-students-card {
@@ -1263,6 +1340,12 @@ body.light-theme .results-error {
 @keyframes adminSkeleton {
   100% {
     transform: translateX(100%);
+  }
+}
+
+@keyframes adminSpin {
+  100% {
+    transform: rotate(360deg);
   }
 }
 

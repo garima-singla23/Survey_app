@@ -4,10 +4,79 @@ import StudentDNA from '../models/StudentDNA.js';
 
 const router = express.Router();
 
-const ADMIN_KEY = 'admin2024';
+const ADMIN_SESSION_DURATION_MS = 2 * 60 * 60 * 1000;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const MAX_LOGIN_ATTEMPTS = 5;
 
 let cachedClient = null;
 let cachedDb = null;
+
+function ensureSecurityStores() {
+  if (!globalThis.adminSessions) {
+    globalThis.adminSessions = new Map();
+  }
+  if (!globalThis.loginAttempts) {
+    globalThis.loginAttempts = new Map();
+  }
+}
+
+function getClientIp(req) {
+  const forwarded = req.headers['x-forwarded-for'];
+  const rawIp = Array.isArray(forwarded)
+    ? forwarded[0]
+    : String(forwarded || req.socket?.remoteAddress || 'unknown');
+
+  return rawIp.split(',')[0].trim() || 'unknown';
+}
+
+function cleanupExpiredSessions() {
+  ensureSecurityStores();
+  const now = Date.now();
+
+  for (const [token, expiresAt] of globalThis.adminSessions.entries()) {
+    if (expiresAt <= now) {
+      globalThis.adminSessions.delete(token);
+    }
+  }
+}
+
+function isValidAdminToken(token) {
+  if (!token || typeof token !== 'string') {
+    return false;
+  }
+
+  cleanupExpiredSessions();
+  const expiresAt = globalThis.adminSessions.get(token);
+  return typeof expiresAt === 'number' && expiresAt > Date.now();
+}
+
+function getRateLimitState(ip) {
+  ensureSecurityStores();
+  const now = Date.now();
+  const existing = globalThis.loginAttempts.get(ip);
+
+  if (!existing || now > existing.resetAt) {
+    const fresh = { count: 0, resetAt: now + LOGIN_WINDOW_MS };
+    globalThis.loginAttempts.set(ip, fresh);
+    return fresh;
+  }
+
+  return existing;
+}
+
+function createAdminToken() {
+  return Buffer.from(`admin-${Date.now()}-${Math.random().toString(36).slice(2)}`).toString('base64');
+}
+
+function registerAdminSession(token) {
+  ensureSecurityStores();
+  const expiresAt = Date.now() + ADMIN_SESSION_DURATION_MS;
+  globalThis.adminSessions.set(token, expiresAt);
+
+  setTimeout(() => {
+    globalThis.adminSessions?.delete(token);
+  }, ADMIN_SESSION_DURATION_MS).unref?.();
+}
 
 async function connectToDatabase() {
   if (cachedClient && cachedDb) {
@@ -54,6 +123,79 @@ const toCountMap = (items, key, normalizer) => {
   return counts;
 };
 
+router.post('/login', async (req, res) => {
+  try {
+    const { password } = req.body || {};
+
+    if (!password || typeof password !== 'string') {
+      return res.status(400).json({ error: 'Password required' });
+    }
+
+    const correctPassword = process.env.ADMIN_PASSWORD;
+    if (!correctPassword) {
+      return res.status(500).json({ error: 'Admin password not configured on server' });
+    }
+
+    const ip = getClientIp(req);
+    const attempt = getRateLimitState(ip);
+    const now = Date.now();
+
+    if (attempt.count >= MAX_LOGIN_ATTEMPTS) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((attempt.resetAt - now) / 1000));
+      const waitMins = Math.ceil(retryAfterSeconds / 60);
+      return res.status(429).json({
+        error: `Too many attempts. Try again in ${waitMins} minutes.`,
+        retryAfterSeconds
+      });
+    }
+
+    if (password !== correctPassword) {
+      attempt.count += 1;
+      const remainingAttempts = Math.max(0, MAX_LOGIN_ATTEMPTS - attempt.count);
+
+      return res.status(401).json({
+        error: `Incorrect password. ${remainingAttempts} attempts remaining.`,
+        remainingAttempts
+      });
+    }
+
+    attempt.count = 0;
+
+    const token = createAdminToken();
+    registerAdminSession(token);
+
+    return res.status(200).json({
+      success: true,
+      token,
+      expiresIn: '2 hours'
+    });
+  } catch (err) {
+    return res.status(500).json({
+      error: 'Failed to login',
+      details: err.message
+    });
+  }
+});
+
+router.post('/logout', async (req, res) => {
+  try {
+    const token = req.headers['x-admin-token'];
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ error: 'Missing admin token' });
+    }
+
+    ensureSecurityStores();
+    globalThis.adminSessions.delete(token);
+
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    return res.status(500).json({
+      error: 'Failed to logout',
+      details: err.message
+    });
+  }
+});
+
 router.all('/analytics', async (req, res) => {
   try {
     if (req.method !== 'GET') {
@@ -66,8 +208,9 @@ router.all('/analytics', async (req, res) => {
       });
     }
 
-    if (req.headers['x-admin-key'] !== ADMIN_KEY) {
-      return res.status(401).json({ error: 'Unauthorized' });
+    const token = req.headers['x-admin-token'];
+    if (!isValidAdminToken(token)) {
+      return res.status(401).json({ error: 'Unauthorized. Please login.' });
     }
 
     const { db } = await connectToDatabase();
